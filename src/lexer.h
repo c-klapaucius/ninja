@@ -44,6 +44,10 @@ struct Lexer {
     POOL,
     RULE,
     SUBNINJA,
+    FOR,
+    IN_,
+    END,
+    PLUSEQ,
     TEOF,
   };
 
@@ -73,28 +77,28 @@ struct Lexer {
   /// Returns false if a name can't be read.
   bool ReadIdent(string* out);
 
-  /// Read a path (complete with $escapes).
+  /// the value side of a var = value line, as $-escaped string
   /// Returns false only on error, returned path may be empty if a delimiter
   /// (space, newline) is hit.
-  bool ReadPath(EvalString* path, string* err) {
-    return ReadEvalString(path, true, err);
+  bool ReadEvalString(EvalString* eval, string *special2, bool path, string* err);
+
+  /// Store current token position
+  void StoreTokenPos(const char *&tpos) {
+	  tpos=ofs_;
   }
 
-  /// Read the value side of a var = value line (complete with $escapes).
-  /// Returns false only on error.
-  bool ReadVarValue(EvalString* value, string* err) {
-    return ReadEvalString(value, false, err);
+  /// Restore token position.
+  /// This is rude. Must find a better solution.
+  void RestoreTokenPos(const char * const &tpos) {
+	  ofs_=tpos;
   }
+  /// Skip past whitespace (called after each read token/ident/etc.).
+  void EatWhitespace();
 
   /// Construct an error message with context.
   bool Error(const string& message, string* err);
 
 private:
-  /// Skip past whitespace (called after each read token/ident/etc.).
-  void EatWhitespace();
-
-  /// Read a $-escaped string.
-  bool ReadEvalString(EvalString* eval, bool path, string* err);
 
   StringPiece filename_;
   StringPiece input_;

@@ -21,7 +21,7 @@ TEST(Lexer, ReadVarValue) {
   Lexer lexer("plain text $var $VaR ${x}\n");
   EvalString eval;
   string err;
-  EXPECT_TRUE(lexer.ReadVarValue(&eval, &err));
+  EXPECT_TRUE(lexer.ReadEvalString(&eval, NULL, false, &err));
   EXPECT_EQ("", err);
   EXPECT_EQ("[plain text ][$var][ ][$VaR][ ][$x]",
             eval.Serialize());
@@ -31,7 +31,7 @@ TEST(Lexer, ReadEvalStringEscapes) {
   Lexer lexer("$ $$ab c$: $\ncde\n");
   EvalString eval;
   string err;
-  EXPECT_TRUE(lexer.ReadVarValue(&eval, &err));
+  EXPECT_TRUE(lexer.ReadEvalString(&eval, NULL, false, &err));
   EXPECT_EQ("", err);
   EXPECT_EQ("[ $ab c: cde]",
             eval.Serialize());
@@ -60,7 +60,7 @@ TEST(Lexer, ReadIdentCurlies) {
 
   EvalString eval;
   string err;
-  EXPECT_TRUE(lexer.ReadVarValue(&eval, &err));
+  EXPECT_TRUE(lexer.ReadEvalString(&eval, NULL, false, &err));
   EXPECT_EQ("", err);
   EXPECT_EQ("[$bar][.dots ][$bar.dots]",
             eval.Serialize());
@@ -70,7 +70,7 @@ TEST(Lexer, Error) {
   Lexer lexer("foo$\nbad $");
   EvalString eval;
   string err;
-  ASSERT_FALSE(lexer.ReadVarValue(&eval, &err));
+  ASSERT_FALSE(lexer.ReadEvalString(&eval, NULL, false, &err));
   EXPECT_EQ("input:2: bad $-escape (literal $ must be written as $$)\n"
             "bad $\n"
             "    ^ near here"

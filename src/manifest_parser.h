@@ -46,6 +46,18 @@ struct ManifestParser {
   }
 
 private:
+  /// Read a path (complete with $escapes).
+  /// Returns false only on error, returned path may be empty if a delimiter
+  /// (space, newline) is hit.
+  bool ReadPath(EvalString* path, string* err) {
+    return ReadEvalString(path, true, err);
+  }
+  /// Read the value side of a var = value line (complete with $escapes).
+  /// Returns false only on error.
+  bool ReadVarValue(EvalString* value, string* err) {
+    return ReadEvalString(value, false, err);
+  }
+  bool ReadEvalString(EvalString* eval, bool path, string* err);
   /// Parse a file, given its contents as a string.
   bool Parse(const string& filename, const string& input, string* err);
 
@@ -53,8 +65,14 @@ private:
   bool ParsePool(string* err);
   bool ParseRule(string* err);
   bool ParseLet(string* key, EvalString* val, string* err);
+  bool ParseLet(string* key, EvalString* val, bool &pluseq, string* err);
   bool ParseEdge(string* err);
   bool ParseDefault(string* err);
+  bool ParseFor(string* err);
+  bool ParseEnd(string* err);
+
+  /// Check and produce error for 'for' without 'end for'
+  bool CheckForEndExpected(string* err);
 
   /// Parse either a 'subninja' or 'include' line.
   bool ParseFileInclude(bool new_scope, string* err);
@@ -69,6 +87,8 @@ private:
   Lexer lexer_;
   DupeEdgeAction dupe_edge_action_;
   bool quiet_;
+  string subinput_;
+  Lexer sublexer_;
 };
 
 #endif  // NINJA_MANIFEST_PARSER_H_

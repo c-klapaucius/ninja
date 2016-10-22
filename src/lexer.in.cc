@@ -76,6 +76,7 @@ const char* Lexer::TokenName(Token t) {
   case COLON:    return "':'";
   case DEFAULT:  return "'default'";
   case EQUALS:   return "'='";
+  case PLUSEQ:   return "'+='";
   case IDENT:    return "identifier";
   case INCLUDE:  return "'include'";
   case INDENT:   return "indent";
@@ -85,6 +86,9 @@ const char* Lexer::TokenName(Token t) {
   case POOL:     return "'pool'";
   case RULE:     return "'rule'";
   case SUBNINJA: return "'subninja'";
+  case FOR:      return "'for'";
+  case IN_:      return "'in'";
+  case END:      return "'end'";
   case TEOF:     return "eof";
   }
   return NULL;  // not reached
@@ -135,10 +139,14 @@ Lexer::Token Lexer::ReadToken() {
     [ ]*"\n"   { token = NEWLINE;  break; }
     [ ]+       { token = INDENT;   break; }
     "build"    { token = BUILD;    break; }
+    "for"      { token = FOR;      break; }
+    "in"       { token = IN_;      break; }
+    "end"      { token = END;      break; }
     "pool"     { token = POOL;     break; }
     "rule"     { token = RULE;     break; }
     "default"  { token = DEFAULT;  break; }
     "="        { token = EQUALS;   break; }
+    "+="       { token = PLUSEQ;   break; }
     ":"        { token = COLON;    break; }
     "||"       { token = PIPE2;    break; }
     "|"        { token = PIPE;     break; }
@@ -197,10 +205,12 @@ bool Lexer::ReadIdent(string* out) {
   return true;
 }
 
-bool Lexer::ReadEvalString(EvalString* eval, bool path, string* err) {
+bool Lexer::ReadEvalString(EvalString* eval, string *special2, bool path, string* err) {
   const char* p = ofs_;
   const char* q;
   const char* start;
+  if (special2)
+	  *special2="";
   for (;;) {
     start = p;
     /*!re2c
@@ -241,6 +251,12 @@ bool Lexer::ReadEvalString(EvalString* eval, bool path, string* err) {
     "${"varname"}" {
       eval->AddSpecial(StringPiece(start + 2, p - start - 3));
       continue;
+    }
+    "$("varname")" {
+      if (!special2)
+        return Error("recursive $(variable) expansion", err);
+      *special2=StringPiece(start + 2, p - start - 3).AsString();
+      break;
     }
     "$"simple_varname {
       eval->AddSpecial(StringPiece(start + 1, p - start - 1));

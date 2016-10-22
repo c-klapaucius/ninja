@@ -80,14 +80,19 @@ bool ManifestParser::Parse(const string& filename, const string& input,
       lexer_.UnreadToken();
       string name;
       EvalString let_value;
-      if (!ParseLet(&name, &let_value, err))
+      bool pluseq=false;
+      if (!ParseLet(&name, &let_value, pluseq, err))
         return false;
       string value = let_value.Evaluate(env_);
       // Check ninja_required_version immediately so we can exit
       // before encountering any syntactic surprises.
       if (name == "ninja_required_version")
         CheckNinjaVersion(value);
-      env_->AddBinding(name, value);
+      if (pluseq) {
+        env_->AddBinding(name, env_->LookupVariable(name) + value);
+      } else {
+        env_->AddBinding(name, value);
+      }
       break;
     }
     case Lexer::INCLUDE:
@@ -98,10 +103,20 @@ bool ManifestParser::Parse(const string& filename, const string& input,
       if (!ParseFileInclude(true, err))
         return false;
       break;
+    case Lexer::FOR:
+      if (!ParseFor(err))
+        return false;
+      break;
+    case Lexer::END:
+      if (!ParseEnd(err))
+        return false;
+    break;
     case Lexer::ERROR: {
       return lexer_.Error(lexer_.DescribeLastError(), err);
     }
     case Lexer::TEOF:
+      if (!CheckForEndExpected(err))
+        return false;
       return true;
     case Lexer::NEWLINE:
       break;
@@ -150,6 +165,58 @@ bool ManifestParser::ParsePool(string* err) {
   return true;
 }
 
+bool ManifestParser::ParseFor(string* err) {
+  ForLoop loop;
+  if (!lexer_.ReadIdent(&loop.key))
+    return lexer_.Error("expected variable name", err);
+  if (!ExpectToken(Lexer::IN_, err))
+    return false;
+  EvalString out;
+  while (1) {
+    out.Clear();
+    if (!ReadPath(&out, err))
+      return false;
+    if (out.empty()) {
+      if (loop.values.size()==0)
+        return lexer_.Error("expected path", err);
+      break;
+    }
+    loop.values.push_back(out);
+  }
+
+  loop.i=0;
+  if (loop.values.size()) {
+    string value=loop.values[loop.i++].Evaluate(env_);
+    env_->AddBinding(loop.key, value);
+    lexer_.StoreTokenPos(loop.lexpos);
+  }
+  state_->forloops_.push_back(loop);
+  return true;
+}
+
+bool ManifestParser::ParseEnd(string* err) {
+  // syntactic sugar: expect 'end for', not just 'end'
+  if (!ExpectToken(Lexer::FOR, err))
+    return false;
+  if (state_->forloops_.size()<1)
+    return lexer_.Error("'end for' without 'for'", err);
+  ForLoop &loop=state_->forloops_.back();
+  if (loop.i>=loop.values.size()) {
+    state_->forloops_.pop_back();
+  } else {
+	  string value=loop.values[loop.i++].Evaluate(env_);
+    env_->AddBinding(loop.key, value);
+    // Somewhat rude: unread all tokens and go to the line after for statement
+    lexer_.RestoreTokenPos(loop.lexpos);
+  }
+  return true;
+}
+
+bool ManifestParser::CheckForEndExpected(string* err) {
+  if (state_->forloops_.size())
+    return lexer_.Error("'end for' expected", err);
+  return true;
+}
 
 bool ManifestParser::ParseRule(string* err) {
   string name;
@@ -192,19 +259,64 @@ bool ManifestParser::ParseRule(string* err) {
   return true;
 }
 
+bool ManifestParser::ReadEvalString(EvalString* eval, bool path, string* err) {
+  if (subinput_.length()) {
+    if (!sublexer_.ReadEvalString(eval, NULL, path, err)) {
+      subinput_="";
+      string errmsg="Error expanding $( variable ) with messsage '";
+      errmsg+=err ? *err : "NULL";
+      errmsg+"'";
+      return lexer_.Error(errmsg, err);
+    }
+    if (!eval->empty())
+      return true;
+    subinput_="";
+  }
+  string special2;
+  if (!lexer_.ReadEvalString(eval, &special2, path, err))
+    return false;
+  if (special2.length()>0) {
+    subinput_=env_->LookupVariable(special2) + "\n";
+    string filename=string("parsing *$(") + special2 +")";
+    sublexer_.Start(filename, subinput_);
+    sublexer_.EatWhitespace();
+    if (eval->empty())
+      return ReadEvalString(eval, path, err);
+  }
+  return true;
+}
+
 bool ManifestParser::ParseLet(string* key, EvalString* value, string* err) {
   if (!lexer_.ReadIdent(key))
     return lexer_.Error("expected variable name", err);
   if (!ExpectToken(Lexer::EQUALS, err))
     return false;
-  if (!lexer_.ReadVarValue(value, err))
+  if (!ReadVarValue(value, err))
+    return false;
+  return true;
+}
+
+bool ManifestParser::ParseLet(string* key, EvalString* value, bool &pluseq, string* err) {
+  if (!lexer_.ReadIdent(key))
+    return lexer_.Error("expected variable name", err);
+
+  Lexer::Token token = lexer_.ReadToken();
+  pluseq=(token==Lexer::PLUSEQ);
+  if (token!=Lexer::EQUALS && token!=Lexer::PLUSEQ) {
+    string message = string("expected ") + Lexer::TokenName(Lexer::EQUALS) + " or " + Lexer::TokenName(Lexer::PLUSEQ);
+    message += string(", got ") + Lexer::TokenName(token);
+    message += Lexer::TokenErrorHint(Lexer::EQUALS);
+    message += Lexer::TokenErrorHint(Lexer::PLUSEQ);
+    return lexer_.Error(message, err);
+  }
+  if (!ReadVarValue(value, err))
     return false;
   return true;
 }
 
 bool ManifestParser::ParseDefault(string* err) {
   EvalString eval;
-  if (!lexer_.ReadPath(&eval, err))
+  if (!ReadPath(&eval, err))
     return false;
   if (eval.empty())
     return lexer_.Error("expected target name", err);
@@ -219,7 +331,7 @@ bool ManifestParser::ParseDefault(string* err) {
       return lexer_.Error(path_err, err);
 
     eval.Clear();
-    if (!lexer_.ReadPath(&eval, err))
+    if (!ReadPath(&eval, err))
       return false;
   } while (!eval.empty());
 
@@ -234,7 +346,7 @@ bool ManifestParser::ParseEdge(string* err) {
 
   {
     EvalString out;
-    if (!lexer_.ReadPath(&out, err))
+    if (!ReadPath(&out, err))
       return false;
     if (out.empty())
       return lexer_.Error("expected path", err);
@@ -243,7 +355,7 @@ bool ManifestParser::ParseEdge(string* err) {
       outs.push_back(out);
 
       out.Clear();
-      if (!lexer_.ReadPath(&out, err))
+      if (!ReadPath(&out, err))
         return false;
     } while (!out.empty());
   }
@@ -253,7 +365,7 @@ bool ManifestParser::ParseEdge(string* err) {
   if (lexer_.PeekToken(Lexer::PIPE)) {
     for (;;) {
       EvalString out;
-      if (!lexer_.ReadPath(&out, err))
+      if (!ReadPath(&out, err))
         return err;
       if (out.empty())
         break;
@@ -276,7 +388,7 @@ bool ManifestParser::ParseEdge(string* err) {
   for (;;) {
     // XXX should we require one path here?
     EvalString in;
-    if (!lexer_.ReadPath(&in, err))
+    if (!ReadPath(&in, err))
       return false;
     if (in.empty())
       break;
@@ -288,7 +400,7 @@ bool ManifestParser::ParseEdge(string* err) {
   if (lexer_.PeekToken(Lexer::PIPE)) {
     for (;;) {
       EvalString in;
-      if (!lexer_.ReadPath(&in, err))
+      if (!ReadPath(&in, err))
         return err;
       if (in.empty())
         break;
@@ -302,7 +414,7 @@ bool ManifestParser::ParseEdge(string* err) {
   if (lexer_.PeekToken(Lexer::PIPE2)) {
     for (;;) {
       EvalString in;
-      if (!lexer_.ReadPath(&in, err))
+      if (!ReadPath(&in, err))
         return false;
       if (in.empty())
         break;
@@ -320,10 +432,14 @@ bool ManifestParser::ParseEdge(string* err) {
   while (has_indent_token) {
     string key;
     EvalString val;
-    if (!ParseLet(&key, &val, err))
+    bool pluseq=false;
+    if (!ParseLet(&key, &val, pluseq, err))
       return false;
-
-    env->AddBinding(key, val.Evaluate(env_));
+    if (pluseq) {
+      env->AddBinding(key, env->LookupVariable(key) + val.Evaluate(env_));
+    } else {
+      env->AddBinding(key, val.Evaluate(env_));
+    }
     has_indent_token = lexer_.PeekToken(Lexer::INDENT);
   }
 
@@ -396,7 +512,7 @@ bool ManifestParser::ParseEdge(string* err) {
 
 bool ManifestParser::ParseFileInclude(bool new_scope, string* err) {
   EvalString eval;
-  if (!lexer_.ReadPath(&eval, err))
+  if (!ReadPath(&eval, err))
     return false;
   string path = eval.Evaluate(env_);
 

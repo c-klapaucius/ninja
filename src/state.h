@@ -80,6 +80,17 @@ struct Pool {
   DelayedEdges delayed_;
 };
 
+struct ForLoop {
+  /// loop variable
+  string key;
+  /// loop values
+  vector<EvalString> values;
+  /// current iteration
+  size_t i;
+  /// token position just after for statement line
+  const char *lexpos;
+};
+
 /// Global state (file status) for a single run.
 struct State {
   static Pool kDefaultPool;
@@ -125,6 +136,8 @@ struct State {
 
   BindingEnv bindings_;
   vector<Node*> defaults_;
+
+  vector<ForLoop> forloops_;
 };
 
 #endif  // NINJA_STATE_H_

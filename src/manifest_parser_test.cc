@@ -394,7 +394,7 @@ TEST_F(ParserTest, Errors) {
     ManifestParser parser(&local_state, NULL, kDupeEdgeActionWarn);
     string err;
     EXPECT_FALSE(parser.ParseTest(string("subn", 4), &err));
-    EXPECT_EQ("input:1: expected '=', got eof\n"
+    EXPECT_EQ("input:1: expected '=' or '+=', got eof\n"
               "subn\n"
               "    ^ near here"
               , err);
@@ -405,7 +405,7 @@ TEST_F(ParserTest, Errors) {
     ManifestParser parser(&local_state, NULL, kDupeEdgeActionWarn);
     string err;
     EXPECT_FALSE(parser.ParseTest("foobar", &err));
-    EXPECT_EQ("input:1: expected '=', got eof\n"
+    EXPECT_EQ("input:1: expected '=' or '+=', got eof\n"
               "foobar\n"
               "      ^ near here"
               , err);
@@ -416,7 +416,7 @@ TEST_F(ParserTest, Errors) {
     ManifestParser parser(&local_state, NULL, kDupeEdgeActionWarn);
     string err;
     EXPECT_FALSE(parser.ParseTest("x 3", &err));
-    EXPECT_EQ("input:1: expected '=', got identifier\n"
+    EXPECT_EQ("input:1: expected '=' or '+=', got identifier\n"
               "x 3\n"
               "  ^ near here"
               , err);
@@ -438,7 +438,7 @@ TEST_F(ParserTest, Errors) {
     ManifestParser parser(&local_state, NULL, kDupeEdgeActionWarn);
     string err;
     EXPECT_FALSE(parser.ParseTest("x = 3\ny 2", &err));
-    EXPECT_EQ("input:2: expected '=', got identifier\n"
+    EXPECT_EQ("input:2: expected '=' or '+=', got identifier\n"
               "y 2\n"
               "  ^ near here"
               , err);
